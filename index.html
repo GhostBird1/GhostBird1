@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<!--
+  ORACOL SIGHTLINES — 002 (2026-09-13)
+  ----------------------------------------------------------------------
+  © 2026 Oracol Design LLC. All rights reserved.
+
+  Grown from Playroom 036 (the isovist) and Sightlines 001.
+
+  WHAT IS NEW IN 002
+    Height.     Signs have a mounting height, walls can have a top
+                (a 3 ft hedge is not a 10 ft wall), and you can tap in
+                spot heights to describe the ground. A viewer's eye
+                sits at eye height above the local ground. Line of
+                sight is checked in three dimensions: over low walls,
+                over berms, down into dips. All of this switches on
+                when the drawing has a scale; without one it is 2D.
+    Facing.     A sign can be omnidirectional or face a direction with
+                a cone of view. Drag the small handle to aim it.
+    PDF.        Plans can be dropped in as PDF as well as JPG/PNG.
+                Multi-page PDFs ask for a page.
+
+  WHAT TO DO (touch or mouse)
+    Rail on the left picks a tool. One finger draws or drags. Two
+    fingers pinch to zoom and pan. The drawer on the right holds the
+    underlay, scale, view, terrain, signs and project files.
+
+  HOW THE SHAPE IS FOUND
+    A ray at every corner and a hair either side, plus one every few
+    degrees. Each ray is cut where sight ends: a full-height wall, or
+    the distance past a low wall at which the eye can no longer see
+    over it, or the first fold of ground that rises into the line.
+    Coverage is measured separately, on a fine grid, cell by cell,
+    with a direct 3D line-of-sight test, so the number is honest even
+    where the shape is an approximation (ground beyond a ridge that
+    happens to rise back into view).
+
+  EDITING THIS FILE
+    Everything tunable lives in CONFIG. Sections are marked with banner
+    comments: state, units, terrain, geometry, coverage, input, drawing,
+    panel. To archive a variant before changing it, duplicate with an
+    incremented, dated name, e.g. oracol-sightlines-003_YYYY-MM-DD.html
+
+  NOTES ON THE NUMBERS
+    Reading distance: 1 in of cap height ≈ 30 ft, a common EGD rule of
+    thumb. Eye height: 5 ft standing; ADA-aware checks for seated
+    viewers (≈ 3 ft 8 in) can be run by changing the eye height.
+    PDF rendering uses Mozilla's pdf.js, fetched from cdnjs the first
+    time a PDF is opened, so that needs a connection once per session.
+  ----------------------------------------------------------------------
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sightlines">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#2F173A">
+<title>oracol &mdash; sightlines</title>
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAKrElEQVR4nOzde3BVxR0H8N/uufeG8MgNBCEoSkR5x/qAiGALxXas1fpCqfpHa7UO01bH6tR/tNpxOvWPOvhHrW21Vsfp1OooDiPFqqP4RAgaRmlMeAgEKG8CJAFCyD1nt3uh4zCc/SXkniTsJt/PMPljdy9zknxzzt593dSFI2cSgE2KABgIB7AQDmAhHMBCOICFcAAL4QAWwgEshANYCAewEA5gIRzAQjiAhXAAC+EAFsIBLIQDWAgHsBAOYCEcwEI4gIVwAAvhABbCASyEA1gIB7AQDmAhHMBCOICFcAAL4QAWwgEshANYCAewEA5gIRzAQjiAhXAAC+EAFsIBLIQDWAgHsBAOYCEcwEI4gIVwAAvhABbCASyEA1gIB7AQDmAhHMBCOICFcAAL4QAWwgEshANYCAewEA5gIRzAQjiAhXAAC+EAFsIBLIQDWAgHsBAOYCEcwEI4gIVwAAvhABbCASyEA1gIB7AQDmAhHMBCOICFcAAL4QAWwgEshANYCAewEA5gIRzA+h8AAAD//51FIHcAAAAGSURBVAMAsQFVEMgVkdMAAAAASUVORK5CYII=">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#F4F4F3; --paper:#FFFFFF; --ink:#2F173A; --teal:#37CDC6;
+    --ink-60:rgba(47,23,58,0.6); --ink-30:rgba(47,23,58,0.3); --ink-12:rgba(47,23,58,0.12);
+    --rail:60px; --drawer:300px;
+    --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+    --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{
+    width:100%; height:100%; overflow:hidden; background:var(--page);
+    font-family:'Roboto',sans-serif; color:var(--ink); font-weight:400; font-size:14px;
+    -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; overscroll-behavior:none;
+  }
+  button,input,select{ font:inherit; color:inherit; }
+  button{ background:none; border:0; cursor:pointer; }
+  #stage{ position:fixed; inset:0; display:block; touch-action:none; cursor:crosshair; }
+  #stage.tool-move{ cursor:default; } #stage.tool-pan{ cursor:grab; }
+  .wordmark{ position:fixed; left:calc(var(--rail) + 18px + var(--sal)); top:calc(16px + var(--sat)); font-size:13px; letter-spacing:0.06em; font-weight:300; text-transform:lowercase; pointer-events:none; opacity:0.8; }
+  .wordmark b{ font-weight:700; }
+
+  .rail{ position:fixed; left:var(--sal); top:0; bottom:0; width:var(--rail); background:var(--paper); border-right:1px solid var(--ink-12);
+    display:flex; flex-direction:column; align-items:center; padding:calc(10px + var(--sat)) 0 calc(10px + var(--sab)); gap:2px; z-index:5; overflow-y:auto; }
+  .rail .tool{ width:48px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--ink); position:relative; flex-shrink:0; }
+  .rail .tool svg{ width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .rail .tool.active{ background:var(--teal); }
+  .rail .tool:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+  .rail .tool .key{ position:absolute; right:6px; bottom:3px; font-size:9px; font-weight:500; opacity:0.45; }
+  .rail .sep{ height:1px; width:32px; background:var(--ink-12); margin:5px 0; flex-shrink:0; }
+  .rail .spacer{ flex:1; }
+
+  .readout{ position:fixed; left:calc(var(--rail) + 18px + var(--sal)); bottom:calc(18px + var(--sab)); background:var(--paper); border:1px solid var(--ink-12); border-radius:14px; padding:12px 16px; min-width:220px; pointer-events:none; z-index:4; }
+  .readout .big{ font-size:30px; font-weight:300; line-height:1; letter-spacing:-0.01em; }
+  .readout .big small{ font-size:13px; font-weight:400; margin-left:6px; letter-spacing:0; }
+  .readout .row{ font-size:12px; opacity:0.7; margin-top:6px; line-height:1.5; }
+  .readout .bar{ height:4px; border-radius:2px; background:var(--ink-12); margin-top:10px; overflow:hidden; }
+  .readout .bar i{ display:block; height:100%; background:var(--teal); width:0; transition:width 0.3s ease; }
+
+  .hint{ position:fixed; left:50%; top:calc(18px + var(--sat)); transform:translateX(-50%); background:var(--ink); color:var(--page); font-size:12px; font-weight:300; letter-spacing:0.03em; padding:8px 14px; border-radius:20px; pointer-events:none; white-space:nowrap; max-width:80vw; overflow:hidden; text-overflow:ellipsis; opacity:0; transition:opacity 0.35s ease; z-index:4; }
+  .hint.show{ opacity:0.92; }
+
+  .drawer-toggle{ position:fixed; right:calc(16px + var(--sar)); top:calc(14px + var(--sat)); width:48px; height:48px; border-radius:12px; background:var(--paper); border:1px solid var(--ink-12); z-index:7; display:flex; align-items:center; justify-content:center; }
+  .drawer-toggle svg{ width:22px; height:22px; stroke:var(--ink); fill:none; stroke-width:1.6; stroke-linecap:round; }
+  .drawer{ position:fixed; right:0; top:0; bottom:0; width:calc(var(--drawer) + var(--sar)); background:var(--paper); border-left:1px solid var(--ink-12); z-index:6; transform:translateX(100%); transition:transform 0.28s cubic-bezier(.2,.8,.2,1); overflow-y:auto; -webkit-overflow-scrolling:touch; padding:calc(20px + var(--sat)) calc(18px + var(--sar)) calc(24px + var(--sab)) 18px; }
+  .drawer.open{ transform:translateX(0); }
+  body.drawer-open .drawer-toggle{ right:calc(var(--drawer) + 12px + var(--sar)); }
+  .drawer h2{ font-size:12px; font-weight:500; letter-spacing:0.04em; margin:22px 0 10px; opacity:0.55; }
+  .drawer h2:first-child{ margin-top:6px; }
+  .drawer .block{ margin-bottom:8px; }
+  .drawer .row{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .drawer .row label{ flex:1; font-size:13px; }
+  .drawer .row .val{ font-size:12px; opacity:0.6; min-width:44px; text-align:right; }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--ink-30); background:var(--paper); font-size:13px; font-weight:500; color:var(--ink); }
+  .btn:active{ background:var(--page); }
+  .btn.primary{ background:var(--ink); color:var(--page); border-color:var(--ink); }
+  .btn.wide{ width:100%; } .btn.small{ min-height:34px; padding:0 10px; font-size:12px; }
+  .btn.danger{ color:#A3242B; border-color:rgba(163,36,43,0.4); }
+  .btn:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+  .btnrow{ display:flex; gap:8px; margin-bottom:8px; } .btnrow .btn{ flex:1; }
+  input[type=range]{ flex:1.4; accent-color:var(--teal); min-height:28px; }
+  input[type=checkbox]{ width:22px; height:22px; accent-color:var(--teal); }
+  input[type=text],input[type=number],select{ min-height:38px; padding:0 10px; border:1px solid var(--ink-30); border-radius:10px; background:var(--paper); width:100%; font-size:14px; }
+  input[type=number]{ width:84px; }
+  select{ width:auto; flex:1.4; }
+  input:focus-visible,select:focus-visible{ outline:2px solid var(--teal); outline-offset:1px; }
+  .seg{ display:flex; border:1px solid var(--ink-30); border-radius:10px; overflow:hidden; margin-bottom:8px; }
+  .seg button{ flex:1; min-height:38px; font-size:13px; font-weight:500; }
+  .seg button.on{ background:var(--ink); color:var(--page); }
+  .note{ font-size:12px; line-height:1.5; opacity:0.65; margin:6px 0 10px; }
+  .signlist{ display:flex; flex-direction:column; gap:6px; }
+  .signitem{ display:flex; align-items:center; gap:10px; min-height:44px; padding:6px 10px; border:1px solid var(--ink-12); border-radius:10px; width:100%; text-align:left; }
+  .signitem.sel{ border-color:var(--ink); background:var(--page); }
+  .signitem .dot{ width:26px; height:26px; border-radius:50%; background:var(--ink); color:var(--page); font-size:11px; font-weight:500; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .signitem .name{ flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .signitem .pct{ font-size:13px; font-weight:300; }
+  .props{ border:1px solid var(--ink-12); border-radius:12px; padding:12px; margin-top:10px; background:var(--page); }
+  .props .metric{ font-size:12px; opacity:0.7; line-height:1.6; margin-top:4px; }
+  .empty{ font-size:13px; opacity:0.6; line-height:1.5; padding:8px 0; }
+
+  .modal-bg{ position:fixed; inset:0; background:rgba(47,23,58,0.35); display:none; align-items:center; justify-content:center; z-index:20; }
+  .modal-bg.show{ display:flex; }
+  .modal{ background:var(--paper); border-radius:16px; padding:22px; width:min(360px,88vw); }
+  .modal h3{ font-size:16px; font-weight:500; margin-bottom:6px; }
+  .modal p{ font-size:13px; opacity:0.7; line-height:1.5; margin-bottom:14px; }
+  .modal .row{ display:flex; gap:8px; margin-bottom:14px; }
+  .modal .row input{ flex:1; } .modal .row select{ flex:0 0 90px; }
+
+  @media (max-width:760px){ :root{ --drawer:82vw; } .readout{ min-width:0; padding:10px 12px; } .readout .big{ font-size:24px; } .wordmark{ display:none; } }
+  @media (prefers-reduced-motion:reduce){ *{ transition:none!important; } }
+</style>
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+<div class="wordmark"><b>oracol</b>&nbsp; sightlines</div>
+
+<nav class="rail" id="rail" aria-label="Tools">
+  <button class="tool" data-tool="move" title="Select and move (1)" aria-label="Select and move"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg><span class="key">1</span></button>
+  <button class="tool" data-tool="wall" title="Draw walls (2)" aria-label="Draw walls"><svg viewBox="0 0 24 24"><path d="M4 18L20 6"/><circle cx="4" cy="18" r="1.6"/><circle cx="20" cy="6" r="1.6"/></svg><span class="key">2</span></button>
+  <button class="tool" data-tool="sign" title="Place a sign (3)" aria-label="Place a sign"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="6"/><path d="M12 16v5M9 21h6"/></svg><span class="key">3</span></button>
+  <button class="tool" data-tool="boundary" title="Draw floor boundary (4)" aria-label="Draw floor boundary"><svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z" stroke-dasharray="3 2.5"/></svg><span class="key">4</span></button>
+  <button class="tool" data-tool="measure" title="Set scale (5)" aria-label="Set scale"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M8 12l2 2M11 9l2 2M14 6l2 2"/></svg><span class="key">5</span></button>
+  <button class="tool" data-tool="spot" title="Spot height (6)" aria-label="Spot height"><svg viewBox="0 0 24 24"><path d="M12 4l8 14H4z"/><path d="M12 10v5"/></svg><span class="key">6</span></button>
+  <button class="tool" data-tool="erase" title="Erase (7)" aria-label="Erase"><svg viewBox="0 0 24 24"><path d="M4 15l8-8 7 7-5 5H9z"/><path d="M14 20h6"/></svg><span class="key">7</span></button>
+  <button class="tool" data-tool="pan" title="Pan (8, or hold space)" aria-label="Pan"><svg viewBox="0 0 24 24"><path d="M9 11V5a1.5 1.5 0 013 0v6M12 10V4a1.5 1.5 0 013 0v7M15 11V6a1.5 1.5 0 013 0v8c0 4-3 6-6 6s-5-1-7-4l-2-4a1.4 1.4 0 012.4-1.3L9 13"/></svg><span class="key">8</span></button>
+  <div class="sep"></div>
+  <button class="tool" id="undoBtn" title="Undo (Z)" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></button>
+  <button class="tool" id="redoBtn" title="Redo (Y)" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></svg></button>
+  <div class="spacer"></div>
+  <button class="tool" id="fitBtn" title="Fit to view (F)" aria-label="Fit to view"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+</nav>
+
+<div class="readout" id="readout">
+  <div class="big"><span id="covPct">0</span>%<small id="covLabel">of the floor can see a sign</small></div>
+  <div class="bar"><i id="covBar"></i></div>
+  <div class="row" id="covRow"></div>
+</div>
+<div class="hint" id="hint"></div>
+
+<button class="drawer-toggle" id="drawerToggle" aria-label="Open panel" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+<aside class="drawer" id="drawer" aria-label="Project panel">
+
+  <h2>Underlay</h2>
+  <div class="block">
+    <div class="btnrow"><button class="btn primary" id="imgBtn">Add plan or map</button><button class="btn" id="imgClear">Remove</button></div>
+    <input type="file" id="imgFile" accept="image/*,.pdf,application/pdf" hidden>
+    <div class="row"><label for="imgOpacity">Opacity</label><input type="range" id="imgOpacity" min="0" max="100" value="70"><span class="val" id="imgOpacityVal">70%</span></div>
+    <div class="note">PDF, JPG, PNG, or a photo of a printed plan. Terrain and city maps work the same way: trace what blocks sight with the wall tool and give it a height.</div>
+  </div>
+
+  <h2>Scale</h2>
+  <div class="block">
+    <div class="row"><label>Units</label><div class="seg" style="margin:0;flex:1.4"><button id="unitFt" class="on">ft</button><button id="unitM">m</button></div></div>
+    <div class="row"><label>Drawing scale</label><span class="val" id="scaleVal" style="min-width:0">not set</span></div>
+    <button class="btn wide" id="scaleBtn">Set scale by measuring</button>
+    <div class="note">Tap two points a known distance apart, then type the real distance. Legibility ranges and heights switch on once scale is set.</div>
+  </div>
+
+  <h2>View</h2>
+  <div class="block">
+    <div class="seg" id="modeSeg"><button data-mode="sight" class="on">Sightlines</button><button data-mode="heat">Heat</button><button data-mode="gaps">Gaps</button></div>
+    <div class="row"><label for="limitToggle">Limit by legibility</label><input type="checkbox" id="limitToggle" checked></div>
+    <div class="row"><label for="threadToggle">Show thread to cursor</label><input type="checkbox" id="threadToggle" checked></div>
+    <div class="row"><label for="eyeHeight">Viewer eye height</label><input type="number" id="eyeHeight" min="0.5" step="0.1"><span class="val" id="eyeUnit">ft</span></div>
+    <div class="row"><label for="feetPerInch">Reading distance per inch of cap height</label><input type="number" id="feetPerInch" min="5" max="100" step="1"><span class="val">ft</span></div>
+  </div>
+
+  <h2>Floor boundary</h2>
+  <div class="block">
+    <div class="note" id="boundaryNote"></div>
+    <button class="btn wide small" id="boundaryClear">Clear boundary</button>
+  </div>
+
+  <h2>Terrain</h2>
+  <div class="block">
+    <div class="note" id="terrainNote"></div>
+    <button class="btn wide small" id="spotsClear">Clear spot heights</button>
+  </div>
+
+  <h2>Selected wall</h2>
+  <div class="block" id="wallProps"><div class="empty">Tap a wall with the move tool to give it a height.</div></div>
+
+  <h2>Signs</h2>
+  <div class="block"><div class="signlist" id="signList"></div><div id="signProps"></div></div>
+
+  <h2>Project</h2>
+  <div class="block">
+    <div class="btnrow"><button class="btn" id="saveBtn">Save</button><button class="btn" id="loadBtn">Open</button><button class="btn" id="pngBtn">Export PNG</button></div>
+    <input type="file" id="loadFile" accept=".json,application/json" hidden>
+    <button class="btn wide danger small" id="clearAll">Start over</button>
+    <div class="note">Save writes a .json file with the underlay embedded, so a project reopens exactly as you left it.</div>
+  </div>
+</aside>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 id="modalTitle"></h3><p id="modalText"></p>
+    <div class="row"><input type="number" id="modalNum" step="any"><select id="modalUnit"><option value="ft">ft</option><option value="m">m</option></select></div>
+    <div class="btnrow"><button class="btn" id="modalCancel">Cancel</button><button class="btn primary" id="modalOk">OK</button></div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// =====================================================================
+// CONFIG — the knobs. Change these first.
+// =====================================================================
+const CONFIG = {
+  page:'#F4F4F3', paper:'#FFFFFF', ink:'#2F173A', teal:'#37CDC6',
+
+  feetPerInch: 30,        // reading distance per inch of cap height
+  eyeHeightFt: 5,         // viewer eye above local ground
+  defaultLetterIn: 2,
+  defaultMountFt: 8,      // new signs: height of sign centre above ground at its base
+  defaultConeDeg: 120,    // when a sign is made directional
+  defaultWallTopFt: null, // null = full height (blocks always); a number = ft above local ground
+  letterOptions: [0.5, 0.625, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 18, 24],
+
+  wallWidth: 4, minWall: 10, snap: 14, grab: 24, signRadius: 15, facingHandle: 40,
+
+  sightAlpha: 0.38,
+  heatAlpha: [0, 0.18, 0.36, 0.55, 0.75, 0.92],
+  gapAlpha: 0.45, threadAlpha: 0.7,
+
+  arcStep: 4,             // degrees between extra rays
+  terrainMarch: 14,       // samples along a line of sight when checking ground
+  idwPower: 2,            // spot-height interpolation
+  samplesTarget: 5000, maxZoom: 12, minZoom: 0.05, undoDepth: 60,
+  defaultWorld: { w:1600, h:1100 },
+
+  pdfjs: (window.ORACOL_PDFJS || {
+    lib:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    worker:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' }),
+  pdfMaxSide: 4000        // rendered PDF page, longest side in px
+};
+
+// =====================================================================
+// STATE
+// =====================================================================
+const stage=document.getElementById('stage'), ctx=stage.getContext('2d');
+let W=0,H=0, view={zoom:1,x:0,y:0}, tool='move', mode='sight', units='ft';
+let limitByLegibility=true, showThread=true;
+let project=newProject();
+function newProject(){ return { version:2, base:null, baseImg:null, baseOpacity:0.7,
+  walls:[],            // [x1,y1,x2,y2,topFt|null]
+  boundary:[],         // [[x,y],...]
+  spots:[],            // {x,y,z}  z in ft above datum
+  signs:[],            // {id,label,x,y,letterIn,mountFt,facing:null|deg,cone:deg}
+  scale:null, scaleUnits:'ft', nextId:1 }; }
+let selected=null, selectedWall=-1, cursor=null, pointers=new Map(), action=null, pinch=null, spaceHeld=false, measureA=null;
+let dirty=true, cache={ isovists:new Map(), grid:null, per:new Map(), union:0, cellsInside:0, area:0 };
+let undoStack=[], redoStack=[];
+
+const toWorld=(sx,sy)=>({x:(sx-view.x)/view.zoom, y:(sy-view.y)/view.zoom});
+const S=px=>px/view.zoom;
+
+function contentBox(){
+  if(project.base) return {x:project.base.x,y:project.base.y,w:project.base.w,h:project.base.h};
+  let xs=[],ys=[];
+  for(const w of project.walls){ xs.push(w[0],w[2]); ys.push(w[1],w[3]); }
+  for(const p of project.boundary){ xs.push(p[0]); ys.push(p[1]); }
+  for(const s of project.signs){ xs.push(s.x); ys.push(s.y); }
+  for(const s of project.spots){ xs.push(s.x); ys.push(s.y); }
+  const d=CONFIG.defaultWorld; let x0=-d.w/2,y0=-d.h/2,x1=d.w/2,y1=d.h/2;
+  if(xs.length){ const pad=120; x0=Math.min(x0,Math.min(...xs)-pad); y0=Math.min(y0,Math.min(...ys)-pad); x1=Math.max(x1,Math.max(...xs)+pad); y1=Math.max(y1,Math.max(...ys)+pad); }
+  return {x:x0,y:y0,w:x1-x0,h:y1-y0};
+}
+
+// =====================================================================
+// UNITS — heights are stored in feet; distances in world px
+// =====================================================================
+const FT_PER_M=3.28084;
+function ftPerPx(){ if(!project.scale) return null; const v=project.scale.unitsPerPx; return project.scaleUnits==='ft'? v : v*FT_PER_M; }
+function unitsPerPx(){ const f=ftPerPx(); if(f==null) return null; return units==='ft'? f : f/FT_PER_M; }
+const ftToU=ft=>units==='ft'? ft : ft/FT_PER_M;
+const uToFt=u=>units==='ft'? u : u*FT_PER_M;
+function fmtH(ft){ const v=ftToU(ft); return (v<10? +v.toFixed(1) : Math.round(v))+' '+units; }
+function fmtLen(worldLen){ const upp=unitsPerPx(); if(!upp) return Math.round(worldLen)+' px'; const v=worldLen*upp; return (v<10? v.toFixed(1): Math.round(v))+' '+units; }
+function fmtArea(worldArea){ const upp=unitsPerPx(); if(!upp) return null; return Math.round(worldArea*upp*upp).toLocaleString()+' sq '+units; }
+function legibleRadiusWorld(sign){ const upp=unitsPerPx(); if(!limitByLegibility||!upp) return null; return ftToU(sign.letterIn*CONFIG.feetPerInch)/upp; }
+const threeD=()=>ftPerPx()!=null;   // heights only mean something once the drawing is scaled
+
+// =====================================================================
+// TERRAIN — ground elevation from spot heights (inverse distance)
+// =====================================================================
+function groundAt(x,y){
+  const sp=project.spots; if(!sp.length) return 0;
+  if(sp.length===1) return sp[0].z;
+  let num=0,den=0;
+  for(const s of sp){ const d2=(x-s.x)*(x-s.x)+(y-s.y)*(y-s.y); if(d2<1e-6) return s.z; const w=1/Math.pow(d2,CONFIG.idwPower/2); num+=w*s.z; den+=w; }
+  return num/den;
+}
+function signZ(s){ return groundAt(s.x,s.y)+s.mountFt; }   // ft above datum
+
+// =====================================================================
+// GEOMETRY — the isovist, cut by height, facing and distance
+// =====================================================================
+function rayHit(ox,oy,dx,dy,x1,y1,x2,y2){
+  const sx=x2-x1, sy=y2-y1, den=dx*sy-dy*sx; if(Math.abs(den)<1e-12) return Infinity;
+  const t=((x1-ox)*sy-(y1-oy)*sx)/den, u=((x1-ox)*dy-(y1-oy)*dx)/den;
+  return (t>1e-9 && u>=-1e-9 && u<=1+1e-9)? t : Infinity;
+}
+function boxSegments(){ const b=contentBox(); return [[b.x,b.y,b.x+b.w,b.y],[b.x+b.w,b.y,b.x+b.w,b.y+b.h],[b.x+b.w,b.y+b.h,b.x,b.y+b.h],[b.x,b.y+b.h,b.x,b.y]]; }
+function drawingWall(){ return (action&&action.kind==='wall')? action.seg : null; }
+const norm=a=>{ while(a>Math.PI) a-=2*Math.PI; while(a<=-Math.PI) a+=2*Math.PI; return a; };
+function inCone(s,x,y){ if(s.facing==null) return true; const a=Math.atan2(y-s.y,x-s.x); return Math.abs(norm(a-s.facing*Math.PI/180))<=s.cone*Math.PI/360+1e-9; }
+
+// how far along a ray (world px) sight survives, ignoring the box
+function rayCap(s,zs,dx,dy,R){
+  const fpp=ftPerPx(), is3=threeD(); let cap=R!=null? R : Infinity;
+  const walls=project.walls.slice(); const dw=drawingWall(); if(dw) walls.push(dw);
+  for(const w of walls){
+    const t=rayHit(s.x,s.y,dx,dy,w[0],w[1],w[2],w[3]); if(t>=cap) continue;
+    const top=w[4];
+    if(!is3 || top==null){ cap=t; continue; }
+    const hx=s.x+dx*t, hy=s.y+dy*t, g=groundAt(hx,hy), hw=g+top, ze=g+CONFIG.eyeHeightFt;
+    if(zs<=hw){ cap=t; continue; }          // sign no higher than the wall: nothing beyond it
+    if(hw<ze) continue;                      // wall below eye level: never blocks
+    const D=t*(zs-ze)/(zs-hw); if(D<cap) cap=D;   // beyond D the eye drops under the sightline
+  }
+  if(is3 && project.spots.length){
+    // walk out along the ray; a point is visible while its eye clears every rise before it
+    const n=Math.max(12,Math.min(120,Math.round(cap/S(18)))); const step=cap/n; let maxSlope=-Infinity;
+    for(let k=1;k<=n;k++){ const d=k*step, px=s.x+dx*d, py=s.y+dy*d, g=groundAt(px,py), dft=d*fpp;
+      const eyeSlope=(g+CONFIG.eyeHeightFt-zs)/dft;
+      if(eyeSlope<maxSlope){ cap=Math.max(0,(k-1)*step); break; }
+      const gSlope=(g-zs)/dft; if(gSlope>maxSlope) maxSlope=gSlope; }
+  }
+  return cap;
+}
+function visibility(s){
+  const R=legibleRadiusWorld(s), zs=signZ(s), box=boxSegments();
+  const segs=box.concat(project.walls); const dw=drawingWall(); if(dw) segs.push(dw);
+  let rays=[];
+  for(const g of segs){ const a1=Math.atan2(g[1]-s.y,g[0]-s.x), a2=Math.atan2(g[3]-s.y,g[2]-s.x); rays.push(a1-1e-5,a1,a1+1e-5,a2-1e-5,a2,a2+1e-5); }
+  const step=CONFIG.arcStep*Math.PI/180; for(let a=-Math.PI;a<Math.PI;a+=step) rays.push(a);
+  const dir=s.facing==null? 0 : s.facing*Math.PI/180, half=s.facing==null? Math.PI : s.cone*Math.PI/360;
+  if(s.facing!=null){ rays.push(dir-half,dir-half+1e-5,dir+half,dir+half-1e-5); rays=rays.filter(a=>Math.abs(norm(a-dir))<=half+1e-9); }
+  rays.sort((a,b)=>norm(a-dir)-norm(b-dir));
+  const pts=[];
+  for(const a of rays){ const dx=Math.cos(a), dy=Math.sin(a);
+    let best=Infinity; for(const g of box){ const t=rayHit(s.x,s.y,dx,dy,g[0],g[1],g[2],g[3]); if(t<best) best=t; }
+    const c=rayCap(s,zs,dx,dy,R); if(c<best) best=c;
+    if(best<Infinity) pts.push([s.x+dx*best, s.y+dy*best]); }
+  if(s.facing!=null) pts.unshift([s.x,s.y]);
+  return pts;
+}
+// exact test for one viewer point (used by coverage and the thread)
+function canSee(s,zs,px,py,R,gv){
+  if(R!=null && Math.hypot(px-s.x,py-s.y)>R) return false;
+  if(!inCone(s,px,py)) return false;
+  const dx=px-s.x, dy=py-s.y, is3=threeD();
+  const ze=(gv==null? groundAt(px,py) : gv)+CONFIG.eyeHeightFt;
+  for(const w of project.walls){ const t=rayHit(s.x,s.y,dx,dy,w[0],w[1],w[2],w[3]); if(t>=0.999) continue;
+    if(!is3 || w[4]==null) return false;
+    const z=zs+(ze-zs)*t; if(z<groundAt(s.x+dx*t,s.y+dy*t)+w[4]) return false; }
+  if(is3 && project.spots.length){ const n=CONFIG.terrainMarch;
+    for(let k=1;k<n;k++){ const t=k/n; if(groundAt(s.x+dx*t,s.y+dy*t)>zs+(ze-zs)*t) return false; } }
+  return true;
+}
+function pointInPoly(px,py,poly){ let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1]; if(((yi>py)!==(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside; } return inside; }
+function polyArea(p){ let a=0; for(let k=0;k<p.length;k++){ const q=p[(k+1)%p.length]; a+=p[k][0]*q[1]-q[0]*p[k][1]; } return Math.abs(a)/2; }
+function distToSeg(px,py,x1,y1,x2,y2){ const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy; let t=l2?((px-x1)*dx+(py-y1)*dy)/l2:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
+
+// =====================================================================
+// COVERAGE — sample the floor, test every cell against every sign
+// =====================================================================
+function recompute(){
+  cache.isovists.clear(); for(const s of project.signs) cache.isovists.set(s.id, visibility(s));
+  const b=contentBox(), useB=project.boundary.length>=3; let bx=b, area=b.w*b.h;
+  if(useB){ const xs=project.boundary.map(p=>p[0]), ys=project.boundary.map(p=>p[1]);
+    bx={x:Math.min(...xs),y:Math.min(...ys),w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)}; area=polyArea(project.boundary); }
+  const cell=Math.max(2,Math.sqrt(Math.max(bx.w*bx.h,1)/CONFIG.samplesTarget));
+  const nx=Math.max(1,Math.ceil(bx.w/cell)), ny=Math.max(1,Math.ceil(bx.h/cell));
+  const counts=new Uint8Array(nx*ny), inside=new Uint8Array(nx*ny);
+  const per=new Map(); for(const s of project.signs) per.set(s.id,0);
+  const radii=project.signs.map(legibleRadiusWorld), zs=project.signs.map(signZ);
+  const terrain=threeD()&&project.spots.length>0;
+  let cellsInside=0, union=0;
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){
+    const cx=bx.x+(i+0.5)*cell, cy=bx.y+(j+0.5)*cell;
+    if(useB && !pointInPoly(cx,cy,project.boundary)) continue;
+    const k=j*nx+i; inside[k]=1; cellsInside++;
+    const gv=terrain? groundAt(cx,cy) : 0; let c=0;
+    for(let n=0;n<project.signs.length;n++){ const s=project.signs[n]; if(canSee(s,zs[n],cx,cy,radii[n],gv)){ c++; per.set(s.id,per.get(s.id)+1); } }
+    counts[k]=c; if(c>0) union++;
+  }
+  cache.grid={x:bx.x,y:bx.y,cell,nx,ny,counts,inside}; cache.cellsInside=cellsInside; cache.union=union; cache.per=per; cache.area=area;
+  dirty=false; updateReadout(); renderSignList();
+}
+const pct=n=>cache.cellsInside? 100*n/cache.cellsInside : 0;
+
+// =====================================================================
+// UNDO
+// =====================================================================
+function snapshot(){ return JSON.stringify({walls:project.walls,boundary:project.boundary,spots:project.spots,signs:project.signs,scale:project.scale,scaleUnits:project.scaleUnits,nextId:project.nextId}); }
+function commit(){ undoStack.push(snapshot()); if(undoStack.length>CONFIG.undoDepth) undoStack.shift(); redoStack=[]; dirty=true; }
+function restore(str){ Object.assign(project,JSON.parse(str)); if(selected!=null&&!project.signs.find(s=>s.id===selected)) selected=null; if(selectedWall>=project.walls.length) selectedWall=-1; dirty=true; renderPanel(); }
+function undo(){ if(!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); hint('Undone'); }
+function redo(){ if(!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); hint('Redone'); }
+
+// =====================================================================
+// HIT TESTING
+// =====================================================================
+function hitSign(w){ const r=S(CONFIG.grab); let best=null,bd=r; for(const s of project.signs){ const d=Math.hypot(w.x-s.x,w.y-s.y); if(d<bd){bd=d;best=s;} } return best; }
+function hitFacingHandle(w){ const s=project.signs.find(x=>x.id===selected); if(!s||s.facing==null) return null;
+  const a=s.facing*Math.PI/180, hx=s.x+Math.cos(a)*S(CONFIG.facingHandle), hy=s.y+Math.sin(a)*S(CONFIG.facingHandle);
+  return Math.hypot(w.x-hx,w.y-hy)<S(CONFIG.grab*0.8)? s : null; }
+function hitSpot(w){ const r=S(CONFIG.grab); for(let i=project.spots.length-1;i>=0;i--){ const s=project.spots[i]; if(Math.hypot(w.x-s.x,w.y-s.y)<r) return i; } return -1; }
+function hitWallEnd(w){ const r=S(CONFIG.grab); for(let i=project.walls.length-1;i>=0;i--){ const s=project.walls[i]; if(Math.hypot(w.x-s[0],w.y-s[1])<r) return {i,end:0}; if(Math.hypot(w.x-s[2],w.y-s[3])<r) return {i,end:1}; } return null; }
+function hitWall(w){ const r=S(CONFIG.grab*0.7); for(let i=project.walls.length-1;i>=0;i--){ const s=project.walls[i]; if(distToSeg(w.x,w.y,s[0],s[1],s[2],s[3])<r) return i; } return -1; }
+function hitBoundaryVertex(w){ const r=S(CONFIG.grab); for(let i=0;i<project.boundary.length;i++){ const p=project.boundary[i]; if(Math.hypot(w.x-p[0],w.y-p[1])<r) return i; } return -1; }
+function snapPoint(w){ const r=S(CONFIG.snap); for(const s of project.walls){ if(Math.hypot(w.x-s[0],w.y-s[1])<r) return {x:s[0],y:s[1]}; if(Math.hypot(w.x-s[2],w.y-s[3])<r) return {x:s[2],y:s[3]}; } return w; }
+
+// =====================================================================
+// INPUT
+// =====================================================================
+stage.addEventListener('pointerdown',e=>{
+  stage.setPointerCapture(e.pointerId); pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===2){ action=null; const [a,b]=[...pointers.values()];
+    pinch={d:Math.hypot(a.x-b.x,a.y-b.y),mx:(a.x+b.x)/2,my:(a.y+b.y)/2,zoom:view.zoom,vx:view.x,vy:view.y}; return; }
+  if(pointers.size>2) return;
+  if(e.pointerType==='mouse'&&e.button!==0){ startPan(e.clientX,e.clientY); return; }
+  cursor={x:e.clientX,y:e.clientY}; const w=toWorld(e.clientX,e.clientY);
+  const t=spaceHeld?'pan':tool;
+  if(t==='pan'){ startPan(e.clientX,e.clientY); return; }
+  if(t==='move'){
+    const fh=hitFacingHandle(w); if(fh){ commit(); action={kind:'facing',sign:fh}; return; }
+    const s=hitSign(w); if(s){ selected=s.id; selectedWall=-1; renderPanel(); commit(); action={kind:'sign',sign:s,ox:w.x-s.x,oy:w.y-s.y}; return; }
+    const sp=hitSpot(w); if(sp>=0){ commit(); action={kind:'spot',i:sp}; return; }
+    const bv=hitBoundaryVertex(w); if(bv>=0){ commit(); action={kind:'bvert',i:bv}; return; }
+    const we=hitWallEnd(w); if(we){ selectedWall=we.i; renderWallProps(); commit(); action={kind:'end',...we}; return; }
+    const wi=hitWall(w); if(wi>=0){ selectedWall=wi; selected=null; renderPanel(); commit(); action={kind:'wallmove',i:wi,last:w}; return; }
+    selected=null; selectedWall=-1; renderPanel(); startPan(e.clientX,e.clientY); return;
+  }
+  if(t==='wall'){ const p=snapPoint(w); action={kind:'wall',seg:[p.x,p.y,p.x,p.y,CONFIG.defaultWallTopFt],sx:e.clientX,sy:e.clientY}; return; }
+  action={kind:t+'-tap',sx:e.clientX,sy:e.clientY,w};
+});
+function startPan(x,y){ action={kind:'pan',sx:x,sy:y,vx:view.x,vy:view.y}; }
+stage.addEventListener('pointermove',e=>{
+  if(pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pinch&&pointers.size===2){ const [a,b]=[...pointers.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    let z=pinch.zoom*(d/Math.max(1,pinch.d)); z=Math.max(CONFIG.minZoom,Math.min(CONFIG.maxZoom,z));
+    const wx=(pinch.mx-pinch.vx)/pinch.zoom, wy=(pinch.my-pinch.vy)/pinch.zoom; view.zoom=z; view.x=mx-wx*z; view.y=my-wy*z; return; }
+  cursor={x:e.clientX,y:e.clientY}; if(!action) return; const w=toWorld(e.clientX,e.clientY);
+  switch(action.kind){
+    case 'pan': view.x=action.vx+(e.clientX-action.sx); view.y=action.vy+(e.clientY-action.sy); break;
+    case 'sign': action.sign.x=w.x-action.ox; action.sign.y=w.y-action.oy; dirty=true; break;
+    case 'facing': action.sign.facing=Math.round(Math.atan2(w.y-action.sign.y,w.x-action.sign.x)*180/Math.PI); dirty=true; break;
+    case 'spot': project.spots[action.i].x=w.x; project.spots[action.i].y=w.y; dirty=true; break;
+    case 'end': { const s=project.walls[action.i], p=snapPoint(w); if(action.end===0){s[0]=p.x;s[1]=p.y;} else {s[2]=p.x;s[3]=p.y;} dirty=true; break; }
+    case 'wallmove': { const s=project.walls[action.i], dx=w.x-action.last.x, dy=w.y-action.last.y; s[0]+=dx;s[1]+=dy;s[2]+=dx;s[3]+=dy; action.last=w; dirty=true; break; }
+    case 'bvert': project.boundary[action.i]=[w.x,w.y]; dirty=true; break;
+    case 'wall': { const p=snapPoint(w); action.seg[2]=p.x; action.seg[3]=p.y; dirty=true; break; }
+  }
+});
+async function endPointer(e){
+  pointers.delete(e.pointerId);
+  if(pinch){ if(pointers.size<2) pinch=null; return; }
+  if(!action) return;
+  const moved=Math.hypot(e.clientX-(action.sx??e.clientX), e.clientY-(action.sy??e.clientY)); const a=action; action=null;
+  const tap=moved<8;
+  switch(a.kind){
+    case 'wall': { const len=Math.hypot(a.seg[2]-a.seg[0],a.seg[3]-a.seg[1])*view.zoom; if(len>CONFIG.minWall){ commit(); project.walls.push(a.seg); selectedWall=project.walls.length-1; renderWallProps(); } dirty=true; break; }
+    case 'sign-tap': if(tap){ commit(); addSign(a.w.x,a.w.y); } break;
+    case 'boundary-tap': if(tap){ commit(); project.boundary.push([a.w.x,a.w.y]); dirty=true; renderPanel();
+      hint(project.boundary.length<3? 'Tap more corners. Coverage counts once there are three.' : 'Boundary set. Keep tapping to add corners, or drag corners with the move tool.'); } break;
+    case 'measure-tap': if(tap){ if(!measureA){ measureA=a.w; hint('Now tap the second point.'); }
+      else { const d=Math.hypot(a.w.x-measureA.x,a.w.y-measureA.y); measureA=null; if(d>2){
+        const r=await askNumber({title:'Real distance',text:'How long is the line you just drew?',unit:true,ok:'Set scale',min:0.01});
+        if(r){ commit(); project.scale={unitsPerPx:r.value/d}; project.scaleUnits=r.unit; dirty=true; renderPanel(); hint('Scale set. Legibility ranges and heights are on.'); } } } } break;
+    case 'spot-tap': if(tap){ if(!threeD()){ hint('Set the scale first, so heights mean something.'); break; }
+      const r=await askNumber({title:'Spot height',text:'Ground elevation at this point, above your datum (0 is the base level).',unit:true,unitLock:true,ok:'Place',def:0,allowNeg:true});
+      if(r){ commit(); project.spots.push({x:a.w.x,y:a.w.y,z:uToFt(r.value)}); dirty=true; renderPanel(); } } break;
+    case 'erase-tap': if(tap){
+      const s=hitSign(a.w); if(s){ commit(); project.signs=project.signs.filter(x=>x!==s); if(selected===s.id) selected=null; dirty=true; renderPanel(); break; }
+      const sp=hitSpot(a.w); if(sp>=0){ commit(); project.spots.splice(sp,1); dirty=true; renderPanel(); break; }
+      const bv=hitBoundaryVertex(a.w); if(bv>=0){ commit(); project.boundary.splice(bv,1); dirty=true; renderPanel(); break; }
+      const wi=hitWall(a.w); if(wi>=0){ commit(); project.walls.splice(wi,1); if(selectedWall===wi) selectedWall=-1; else if(selectedWall>wi) selectedWall--; dirty=true; renderPanel(); } } break;
+    default: dirty=true;
+  }
+}
+stage.addEventListener('pointerup',endPointer);
+stage.addEventListener('pointercancel',e=>{ pointers.delete(e.pointerId); pinch=null; action=null; });
+stage.addEventListener('pointerleave',e=>{ if(e.pointerType==='mouse'&&!action) cursor=null; });
+stage.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(e.clientX,e.clientY,view.zoom*Math.exp(-e.deltaY*0.0015)); },{passive:false});
+function zoomAt(sx,sy,z){ z=Math.max(CONFIG.minZoom,Math.min(CONFIG.maxZoom,z)); const w=toWorld(sx,sy); view.zoom=z; view.x=sx-w.x*z; view.y=sy-w.y*z; }
+stage.addEventListener('dblclick',e=>zoomAt(e.clientX,e.clientY,view.zoom*1.6));
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return; const k=e.key.toLowerCase();
+  if(k===' '){ spaceHeld=true; e.preventDefault(); }
+  else if(k==='z'&&(e.metaKey||e.ctrlKey)&&e.shiftKey) redo(); else if(k==='z') undo(); else if(k==='y') redo();
+  else if(k==='f') fitView();
+  else if(k==='escape'){ action=null; measureA=null; selected=null; selectedWall=-1; renderPanel(); }
+  else if((k==='delete'||k==='backspace')){ if(selected!=null){ commit(); project.signs=project.signs.filter(s=>s.id!==selected); selected=null; dirty=true; renderPanel(); }
+    else if(selectedWall>=0){ commit(); project.walls.splice(selectedWall,1); selectedWall=-1; dirty=true; renderPanel(); } }
+  else if('12345678'.includes(k)&&k.length===1) setTool(['move','wall','sign','boundary','measure','spot','erase','pan'][+k-1]);
+});
+window.addEventListener('keyup',e=>{ if(e.key===' ') spaceHeld=false; });
+
+// =====================================================================
+// ACTIONS
+// =====================================================================
+function addSign(x,y){ const id=project.nextId++; project.signs.push({id,label:'Sign '+id,x,y,letterIn:CONFIG.defaultLetterIn,mountFt:CONFIG.defaultMountFt,facing:null,cone:CONFIG.defaultConeDeg});
+  selected=id; selectedWall=-1; dirty=true; renderPanel(); if(!project.scale) hint('Sign placed. Set the scale to see how far it can be read.'); }
+function setTool(t){ tool=t; measureA=null; action=null;
+  document.querySelectorAll('.rail .tool[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===t)); stage.className='tool-'+t;
+  hint({move:'Drag signs, wall ends, spot heights or boundary corners. Drag empty space to pan.', wall:'Drag to draw a wall. Ends snap. Set its height in the panel.', sign:'Tap where the sign will hang.',
+    boundary:'Tap the corners of the floor area that matters.', measure:'Tap two points a known distance apart.', spot:'Tap the ground and type its elevation. A few points describe a slope or a berm.',
+    erase:'Tap a wall, sign, spot height or boundary corner to remove it.', pan:'Drag to pan. Pinch to zoom.'}[t]); }
+let hintT; function hint(msg,ms){ const h=document.getElementById('hint'); h.textContent=msg; h.classList.add('show'); clearTimeout(hintT); hintT=setTimeout(()=>h.classList.remove('show'),ms||2800); }
+function fitView(){ const b=contentBox(), railW=60, pad=40, open=document.body.classList.contains('drawer-open');
+  const availW=W-railW-pad*2-(open?300:0), availH=H-pad*2; const z=Math.max(CONFIG.minZoom,Math.min(CONFIG.maxZoom,Math.min(availW/b.w,availH/b.h)));
+  view.zoom=z; view.x=railW+pad+(availW-b.w*z)/2-b.x*z; view.y=pad+(availH-b.h*z)/2-b.y*z; }
+
+// ---- modal (a promise) ----
+let modalResolve=null;
+function askNumber(o){ return new Promise(res=>{ modalResolve=res;
+  document.getElementById('modalTitle').textContent=o.title; document.getElementById('modalText').textContent=o.text;
+  const inp=document.getElementById('modalNum'), sel=document.getElementById('modalUnit');
+  inp.value=o.def!=null? o.def : ''; inp.min=o.allowNeg? '' : (o.min??0); inp.step=o.step||'any';
+  sel.style.display=o.unit? '' : 'none'; sel.value=units; sel.disabled=!!o.unitLock;
+  document.getElementById('modalOk').textContent=o.ok||'OK'; document.getElementById('modalBg').classList.add('show'); setTimeout(()=>{inp.focus();inp.select();},50); }); }
+function closeModal(v){ document.getElementById('modalBg').classList.remove('show'); const r=modalResolve; modalResolve=null; if(r) r(v); }
+document.getElementById('modalCancel').onclick=()=>closeModal(null);
+document.getElementById('modalOk').onclick=()=>{ const v=parseFloat(document.getElementById('modalNum').value); if(isNaN(v)) return; closeModal({value:v,unit:document.getElementById('modalUnit').value}); };
+document.getElementById('modalNum').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('modalOk').click(); if(e.key==='Escape') closeModal(null); });
+
+// ---- underlay: images and PDFs ----
+function loadUnderlayFile(file){ if(file.type==='application/pdf'||/\.pdf$/i.test(file.name)) loadPDF(file); else { const r=new FileReader(); r.onload=()=>setBase(r.result); r.readAsDataURL(file); } }
+function setBase(src,rect){ const img=new Image(); img.onload=()=>{ project.baseImg=img;
+  project.base=rect||{src,x:-img.naturalWidth/2,y:-img.naturalHeight/2,w:img.naturalWidth,h:img.naturalHeight}; project.base.src=src;
+  dirty=true; if(!rect) fitView(); renderPanel(); hint('Underlay added. Trace the walls, then set the scale.'); }; img.src=src; }
+let pdfjsPromise=null;
+function ensurePdfJs(){ if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib); if(pdfjsPromise) return pdfjsPromise;
+  pdfjsPromise=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=CONFIG.pdfjs.lib;
+    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=CONFIG.pdfjs.worker; res(window.pdfjsLib); }catch(e){ rej(e); } };
+    s.onerror=()=>{ pdfjsPromise=null; rej(new Error('offline')); }; document.head.appendChild(s); }); return pdfjsPromise; }
+async function loadPDF(file){
+  hint('Reading PDF…',6000);
+  try{
+    const lib=await ensurePdfJs(); const pdf=await lib.getDocument({data:await file.arrayBuffer()}).promise;
+    let page=1; if(pdf.numPages>1){ const r=await askNumber({title:'Which page?',text:'This PDF has '+pdf.numPages+' pages.',def:1,min:1,step:1}); if(!r) return; page=Math.max(1,Math.min(pdf.numPages,Math.round(r.value))); }
+    const pg=await pdf.getPage(page); const v0=pg.getViewport({scale:1}); const sc=Math.min(4,CONFIG.pdfMaxSide/Math.max(v0.width,v0.height)); const vp=pg.getViewport({scale:sc});
+    const c=document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height); const cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height);
+    await pg.render({canvasContext:cx,viewport:vp}).promise; setBase(c.toDataURL('image/jpeg',0.88));
+  }catch(err){ hint(err&&err.message==='offline'? 'PDF support needs a connection the first time. Try again online, or export the page as JPG.' : 'Could not read that PDF. Try exporting the page as JPG.',5000); }
+}
+
+// ---- save / load / export ----
+function download(name,blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500); }
+const stamp=()=>new Date().toISOString().slice(0,10);
+function saveProject(){ const o={app:'oracol-sightlines',version:2,saved:new Date().toISOString(),base:project.base,baseOpacity:project.baseOpacity,walls:project.walls,boundary:project.boundary,spots:project.spots,signs:project.signs,
+  scale:project.scale,scaleUnits:project.scaleUnits,nextId:project.nextId,units,feetPerInch:CONFIG.feetPerInch,eyeHeightFt:CONFIG.eyeHeightFt,view};
+  download('oracol-sightlines_'+stamp()+'.json',new Blob([JSON.stringify(o)],{type:'application/json'})); hint('Saved'); }
+function loadProject(file){ const r=new FileReader(); r.onload=()=>{ try{ const o=JSON.parse(r.result); if(o.app!=='oracol-sightlines') throw 0;
+  project=newProject(); project.walls=(o.walls||[]).map(w=>[w[0],w[1],w[2],w[3],w[4]??null]); project.boundary=o.boundary||[]; project.spots=o.spots||[];
+  project.signs=(o.signs||[]).map(s=>({mountFt:CONFIG.defaultMountFt,facing:null,cone:CONFIG.defaultConeDeg,...s}));
+  project.scale=o.scale||null; project.scaleUnits=o.scaleUnits||'ft'; project.nextId=o.nextId||(project.signs.length+1); project.baseOpacity=o.baseOpacity??0.7;
+  if(o.feetPerInch) CONFIG.feetPerInch=o.feetPerInch; if(o.eyeHeightFt) CONFIG.eyeHeightFt=o.eyeHeightFt; if(o.units) units=o.units;
+  undoStack=[]; redoStack=[]; selected=null; selectedWall=-1;
+  if(o.base&&o.base.src) setBase(o.base.src,o.base); else { project.base=null; project.baseImg=null; fitView(); }
+  if(o.view) view={...o.view}; dirty=true; setUnits(units); hint('Project opened'); }catch(err){ hint('That file is not an Oracol Sightlines project.'); } }; r.readAsText(file); }
+function exportPNG(){ draw(true); stage.toBlob(b=>{ download('oracol-sightlines_'+stamp()+'.png',b); hint('PNG exported'); },'image/png'); }
+
+// =====================================================================
+// DRAWING
+// =====================================================================
+function resize(){ W=window.innerWidth; H=window.innerHeight; stage.width=W*devicePixelRatio; stage.height=H*devicePixelRatio; stage.style.width=W+'px'; stage.style.height=H+'px'; }
+function hexRGB(h){ return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
+function buildGridCanvas(g){ const c=g.canvas||document.createElement('canvas'); c.width=g.nx; c.height=g.ny; const cx=c.getContext('2d'); const im=cx.createImageData(g.nx,g.ny); const d=im.data;
+  const teal=hexRGB(CONFIG.teal), ink=hexRGB(CONFIG.ink);
+  for(let k=0;k<g.nx*g.ny;k++){ if(!g.inside[k]) continue; const n=g.counts[k]; let rgb,a;
+    if(mode==='heat'){ if(!n) continue; rgb=teal; a=CONFIG.heatAlpha[Math.min(n,CONFIG.heatAlpha.length-1)]; } else { if(n) continue; rgb=ink; a=CONFIG.gapAlpha; }
+    d[k*4]=rgb[0]; d[k*4+1]=rgb[1]; d[k*4+2]=rgb[2]; d[k*4+3]=Math.round(a*255); }
+  cx.putImageData(im,0,0); g.canvas=c; g.canvasMode=mode; }
+function draw(forExport){
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); ctx.fillStyle=CONFIG.page; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.translate(view.x,view.y); ctx.scale(view.zoom,view.zoom); const lw=px=>px/view.zoom;
+  const b=contentBox(); ctx.fillStyle=CONFIG.paper; ctx.fillRect(b.x,b.y,b.w,b.h);
+  if(project.baseImg){ ctx.globalAlpha=project.baseOpacity; ctx.drawImage(project.baseImg,project.base.x,project.base.y,project.base.w,project.base.h); ctx.globalAlpha=1; }
+
+  if(mode==='sight'){ ctx.globalCompositeOperation='multiply'; ctx.fillStyle=CONFIG.teal; ctx.globalAlpha=CONFIG.sightAlpha;
+    for(const s of project.signs){ const p=cache.isovists.get(s.id); if(!p||p.length<3) continue; ctx.beginPath(); ctx.moveTo(p[0][0],p[0][1]); for(let k=1;k<p.length;k++) ctx.lineTo(p[k][0],p[k][1]); ctx.closePath(); ctx.fill(); }
+    ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+  } else if(cache.grid){ const g=cache.grid; if(!g.canvas||g.canvasMode!==mode) buildGridCanvas(g);
+    ctx.globalCompositeOperation='multiply'; ctx.imageSmoothingEnabled=false; ctx.drawImage(g.canvas,g.x,g.y,g.nx*g.cell,g.ny*g.cell); ctx.imageSmoothingEnabled=true; ctx.globalCompositeOperation='source-over'; }
+
+  if(project.boundary.length>=3){ ctx.save(); ctx.beginPath(); ctx.rect(b.x-1e5,b.y-1e5,b.w+2e5,b.h+2e5);
+    ctx.moveTo(project.boundary[0][0],project.boundary[0][1]); for(let i=1;i<project.boundary.length;i++) ctx.lineTo(project.boundary[i][0],project.boundary[i][1]); ctx.closePath();
+    ctx.fillStyle='rgba(244,244,243,0.78)'; ctx.fill('evenodd'); ctx.restore(); }
+
+  for(const s of project.signs){ const R=legibleRadiusWorld(s); if(R==null) continue; ctx.strokeStyle=CONFIG.ink; ctx.globalAlpha=0.18; ctx.lineWidth=lw(1); ctx.setLineDash([lw(4),lw(5)]);
+    ctx.beginPath(); if(s.facing==null) ctx.arc(s.x,s.y,R,0,Math.PI*2); else { const a=s.facing*Math.PI/180, h=s.cone*Math.PI/360; ctx.moveTo(s.x,s.y); ctx.arc(s.x,s.y,R,a-h,a+h); ctx.closePath(); }
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
+
+  if(project.boundary.length){ ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4); ctx.setLineDash([lw(6),lw(5)]); ctx.globalAlpha=0.6;
+    ctx.beginPath(); ctx.moveTo(project.boundary[0][0],project.boundary[0][1]); for(let i=1;i<project.boundary.length;i++) ctx.lineTo(project.boundary[i][0],project.boundary[i][1]); if(project.boundary.length>=3) ctx.closePath(); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
+    if(!forExport&&(tool==='boundary'||tool==='move'||tool==='erase')){ ctx.fillStyle=CONFIG.paper; ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4); for(const p of project.boundary){ ctx.beginPath(); ctx.arc(p[0],p[1],lw(5),0,Math.PI*2); ctx.fill(); ctx.stroke(); } } }
+
+  // walls: full height solid, low walls hollow
+  ctx.lineCap='round';
+  project.walls.forEach((w,i)=>{ const low=w[4]!=null&&threeD(); ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(CONFIG.wallWidth);
+    if(low) ctx.setLineDash([lw(7),lw(5)]); ctx.beginPath(); ctx.moveTo(w[0],w[1]); ctx.lineTo(w[2],w[3]); ctx.stroke(); ctx.setLineDash([]);
+    if(i===selectedWall&&!forExport){ ctx.strokeStyle=CONFIG.teal; ctx.lineWidth=lw(CONFIG.wallWidth+6); ctx.globalAlpha=0.55; ctx.beginPath(); ctx.moveTo(w[0],w[1]); ctx.lineTo(w[2],w[3]); ctx.stroke(); ctx.globalAlpha=1; }
+    if(low&&!forExport){ ctx.fillStyle=CONFIG.ink; ctx.globalAlpha=0.7; ctx.font='300 '+lw(10)+'px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(fmtH(w[4]),(w[0]+w[2])/2+lw(0),(w[1]+w[3])/2-lw(10)); ctx.globalAlpha=1; } });
+  if(action&&action.kind==='wall'){ ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(CONFIG.wallWidth); ctx.globalAlpha=0.5; ctx.beginPath(); ctx.moveTo(action.seg[0],action.seg[1]); ctx.lineTo(action.seg[2],action.seg[3]); ctx.stroke(); ctx.globalAlpha=1; }
+  if(!forExport&&(tool==='move'||tool==='wall')){ ctx.fillStyle=CONFIG.paper; ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4);
+    for(const w of project.walls) for(const [x,y] of [[w[0],w[1]],[w[2],w[3]]]){ ctx.beginPath(); ctx.arc(x,y,lw(4),0,Math.PI*2); ctx.fill(); ctx.stroke(); } }
+
+  // spot heights
+  for(const s of project.spots){ const r=lw(6); ctx.fillStyle=CONFIG.paper; ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4);
+    ctx.beginPath(); ctx.moveTo(s.x,s.y-r); ctx.lineTo(s.x+r,s.y+r*0.8); ctx.lineTo(s.x-r,s.y+r*0.8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=CONFIG.ink; ctx.globalAlpha=0.8; ctx.font='300 '+lw(10)+'px Roboto, sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(fmtH(s.z),s.x+r+lw(3),s.y); ctx.globalAlpha=1; }
+
+  if(measureA&&cursor&&!forExport){ const c=toWorld(cursor.x,cursor.y); ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4); ctx.setLineDash([lw(5),lw(4)]);
+    ctx.beginPath(); ctx.moveTo(measureA.x,measureA.y); ctx.lineTo(c.x,c.y); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle=CONFIG.ink; ctx.beginPath(); ctx.arc(measureA.x,measureA.y,lw(4),0,Math.PI*2); ctx.fill(); }
+
+  if(showThread&&cursor&&!forExport&&!action){ const c=toWorld(cursor.x,cursor.y);
+    for(const s of project.signs){ if(!canSee(s,signZ(s),c.x,c.y,legibleRadiusWorld(s))) continue;
+      ctx.globalAlpha=CONFIG.threadAlpha; ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.2); ctx.setLineDash([lw(5),lw(5)]); ctx.beginPath(); ctx.moveTo(c.x,c.y); ctx.lineTo(s.x,s.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; } }
+
+  for(const s of project.signs){ const r=lw(CONFIG.signRadius), sel=s.id===selected;
+    if(s.facing!=null){ const a=s.facing*Math.PI/180, hd=lw(CONFIG.facingHandle), hx=s.x+Math.cos(a)*hd, hy=s.y+Math.sin(a)*hd;
+      ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4); ctx.globalAlpha=0.6; ctx.beginPath(); ctx.moveTo(s.x+Math.cos(a)*r,s.y+Math.sin(a)*r); ctx.lineTo(hx,hy); ctx.stroke(); ctx.globalAlpha=1;
+      if(sel&&!forExport&&tool==='move'){ ctx.fillStyle=CONFIG.teal; ctx.beginPath(); ctx.arc(hx,hy,lw(7),0,Math.PI*2); ctx.fill(); ctx.strokeStyle=CONFIG.ink; ctx.stroke(); } }
+    ctx.beginPath(); ctx.arc(s.x,s.y,r,0,Math.PI*2); ctx.fillStyle=CONFIG.ink; ctx.fill(); if(sel){ ctx.strokeStyle=CONFIG.teal; ctx.lineWidth=lw(3); ctx.stroke(); }
+    ctx.fillStyle=CONFIG.page; ctx.font='500 '+lw(11)+'px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(s.id),s.x,s.y+lw(0.5));
+    const p=cache.per.get(s.id); ctx.fillStyle=CONFIG.ink; ctx.globalAlpha=0.85; ctx.font='300 '+lw(11)+'px Roboto, sans-serif'; ctx.textBaseline='top';
+    ctx.fillText(s.label+(p!=null?'  '+pct(p).toFixed(0)+'%':''),s.x,s.y+r+lw(5)); ctx.globalAlpha=1; }
+  ctx.restore();
+}
+function frame(){ if(dirty) recompute(); draw(false); requestAnimationFrame(frame); }
+
+// =====================================================================
+// PANEL
+// =====================================================================
+function updateReadout(){ const u=pct(cache.union);
+  document.getElementById('covPct').textContent=u.toFixed(0); document.getElementById('covBar').style.width=u+'%';
+  document.getElementById('covLabel').textContent=(project.boundary.length>=3?'of the boundary':'of the floor')+' can see a sign';
+  const row=document.getElementById('covRow');
+  if(!project.signs.length) row.textContent='No signs yet. Pick the sign tool and tap the plan.';
+  else { const parts=[project.signs.length+(project.signs.length===1?' sign':' signs'),(100-u).toFixed(0)+'% unseen']; const area=fmtArea(cache.area); if(area) parts.push(area);
+    parts.push(!project.scale? 'scale not set, 2D' : (project.spots.length? '3D with terrain' : '3D')); row.textContent=parts.join('  ·  '); }
+  document.getElementById('scaleVal').textContent=project.scale? '1 px = '+fmtLen(1) : 'not set';
+  const nb=project.boundary.length; document.getElementById('boundaryNote').textContent= nb>=3? nb+' corners. Coverage is measured inside this area; outside is dimmed.' : nb? nb+' corner'+(nb>1?'s':'')+' so far. Tap at least three.' : 'None. Coverage is measured across the whole drawing. Use the boundary tool to trace the area that matters.';
+  const ns=project.spots.length; document.getElementById('terrainNote').textContent= !project.scale? 'Set the scale first. Then tap in spot heights to describe slopes, berms and dips; the ground between them is interpolated.' : ns? ns+' spot height'+(ns>1?'s':'')+'. Ground between them is interpolated; everywhere else sits at the nearest values. Viewers stand at eye height above this ground.' : 'Flat ground at 0. Tap in spot heights to describe slopes, berms and dips.';
+  document.getElementById('eyeUnit').textContent=units; const eh=document.getElementById('eyeHeight'); if(document.activeElement!==eh) eh.value=+ftToU(CONFIG.eyeHeightFt).toFixed(2);
+  document.getElementById('feetPerInch').value=CONFIG.feetPerInch; }
+function renderSignList(){ const list=document.getElementById('signList'); list.innerHTML='';
+  if(!project.signs.length){ list.innerHTML='<div class="empty">No signs yet.</div>'; document.getElementById('signProps').innerHTML=''; return; }
+  for(const s of project.signs){ const b=document.createElement('button'); b.className='signitem'+(s.id===selected?' sel':''); const p=cache.per.get(s.id);
+    b.innerHTML='<span class="dot">'+s.id+'</span><span class="name"></span><span class="pct">'+(p!=null?pct(p).toFixed(0)+'%':'')+'</span>'; b.querySelector('.name').textContent=s.label;
+    b.onclick=()=>{ selected=s.id; selectedWall=-1; renderPanel(); }; list.appendChild(b); }
+  renderSignProps(); }
+function renderSignProps(){ const box=document.getElementById('signProps'); const s=project.signs.find(x=>x.id===selected); if(!s){ box.innerHTML=''; box.className=''; return; }
+  const opts=CONFIG.letterOptions.map(v=>'<option value="'+v+'"'+(v===s.letterIn?' selected':'')+'>'+v+'"</option>').join(''); const R=legibleRadiusWorld(s), p=cache.per.get(s.id);
+  box.className='props';
+  box.innerHTML='<div class="row"><input type="text" id="sLabel"></div>'+
+    '<div class="row"><label for="sLetter">Cap height</label><select id="sLetter">'+opts+'</select></div>'+
+    '<div class="row"><label for="sMount">Mounting height</label><input type="number" id="sMount" step="0.1" min="0"><span class="val">'+units+'</span></div>'+
+    '<div class="seg" id="sDir"><button data-v="omni"'+(s.facing==null?' class="on"':'')+'>All directions</button><button data-v="dir"'+(s.facing!=null?' class="on"':'')+'>Faces one way</button></div>'+
+    (s.facing!=null? '<div class="row"><label for="sFacing">Facing</label><input type="number" id="sFacing" step="1"><span class="val">°</span></div>'+
+      '<div class="row"><label for="sCone">Cone width</label><input type="range" id="sCone" min="20" max="300" step="5" value="'+s.cone+'"><span class="val" id="sConeVal">'+s.cone+'°</span></div>' : '')+
+    '<div class="metric">Readable to about '+(R!=null? fmtLen(R) : (project.scale? 'anywhere in sight' : (s.letterIn*CONFIG.feetPerInch)+' ft, once scale is set'))+
+    (threeD()? '<br>Sign centre at '+fmtH(signZ(s))+' above datum' : '')+(p!=null? '<br>'+pct(p).toFixed(0)+'% of the floor sees this sign' : '')+'</div>'+
+    '<div class="btnrow" style="margin-top:10px"><button class="btn small" id="sDup">Duplicate</button><button class="btn small danger" id="sDel">Remove</button></div>';
+  const lab=box.querySelector('#sLabel'); lab.value=s.label; lab.oninput=()=>{ s.label=lab.value; }; lab.onchange=()=>renderSignList();
+  box.querySelector('#sLetter').onchange=e=>{ commit(); s.letterIn=parseFloat(e.target.value); dirty=true; };
+  const m=box.querySelector('#sMount'); m.value=+ftToU(s.mountFt).toFixed(2); m.onchange=e=>{ const v=parseFloat(e.target.value); if(v>=0){ commit(); s.mountFt=uToFt(v); dirty=true; } };
+  box.querySelectorAll('#sDir button').forEach(bt=>bt.onclick=()=>{ commit(); s.facing= bt.dataset.v==='omni'? null : (s.facing??0); dirty=true; renderSignProps(); if(s.facing!=null) hint('Drag the small handle on the plan to aim the sign.'); });
+  const f=box.querySelector('#sFacing'); if(f){ f.value=s.facing; f.onchange=e=>{ commit(); s.facing=Math.round(parseFloat(e.target.value)||0); dirty=true; }; }
+  const c=box.querySelector('#sCone'); if(c){ c.oninput=e=>{ s.cone=+e.target.value; box.querySelector('#sConeVal').textContent=s.cone+'°'; dirty=true; }; c.onchange=()=>commit(); }
+  box.querySelector('#sDup').onclick=()=>{ commit(); const id=project.nextId++; project.signs.push({...s,id,label:'Sign '+id,x:s.x+S(40),y:s.y+S(40)}); selected=id; dirty=true; renderPanel(); };
+  box.querySelector('#sDel').onclick=()=>{ commit(); project.signs=project.signs.filter(x=>x!==s); selected=null; dirty=true; renderPanel(); }; }
+function renderWallProps(){ const box=document.getElementById('wallProps'); const w=project.walls[selectedWall]; if(!w){ box.innerHTML='<div class="empty">Tap a wall with the move tool to give it a height.</div>'; return; }
+  if(!project.scale){ box.innerHTML='<div class="empty">Wall selected. Set the scale first; until then every wall blocks sight fully.</div>'; return; }
+  const full=w[4]==null;
+  box.innerHTML='<div class="seg" id="wKind"><button data-v="full"'+(full?' class="on"':'')+'>Full height</button><button data-v="low"'+(!full?' class="on"':'')+'>Has a top</button></div>'+
+    (!full? '<div class="row"><label for="wTop">Top above ground</label><input type="number" id="wTop" step="0.1" min="0"><span class="val">'+units+'</span></div>' : '')+
+    '<div class="btnrow"><button class="btn small" id="wAll">Apply to all walls</button><button class="btn small danger" id="wDel">Remove</button></div>'+
+    '<div class="note">'+(full? 'Blocks sight completely: a building, a solid wall.' : 'A hedge, a counter, a low wall, a berm edge. Whether a viewer sees over it depends on the sign height, their distance and their eye height.')+'</div>';
+  box.querySelectorAll('#wKind button').forEach(bt=>bt.onclick=()=>{ commit(); w[4]= bt.dataset.v==='full'? null : (w[4]??uToFt(units==='ft'?3:1)); dirty=true; renderWallProps(); });
+  const t=box.querySelector('#wTop'); if(t){ t.value=+ftToU(w[4]).toFixed(2); t.onchange=e=>{ const v=parseFloat(e.target.value); if(v>=0){ commit(); w[4]=uToFt(v); dirty=true; } }; }
+  box.querySelector('#wAll').onclick=()=>{ commit(); for(const o of project.walls) o[4]=w[4]; dirty=true; hint('Applied to all walls'); };
+  box.querySelector('#wDel').onclick=()=>{ commit(); project.walls.splice(selectedWall,1); selectedWall=-1; dirty=true; renderPanel(); }; }
+function renderPanel(){ updateReadout(); renderSignList(); renderWallProps();
+  document.getElementById('imgOpacity').value=Math.round(project.baseOpacity*100); document.getElementById('imgOpacityVal').textContent=Math.round(project.baseOpacity*100)+'%'; }
+function setUnits(u){ units=u; document.getElementById('unitFt').classList.toggle('on',u==='ft'); document.getElementById('unitM').classList.toggle('on',u==='m'); dirty=true; renderPanel(); }
+
+// ---- wiring ----
+document.querySelectorAll('.rail .tool[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+document.getElementById('undoBtn').onclick=undo; document.getElementById('redoBtn').onclick=redo; document.getElementById('fitBtn').onclick=fitView;
+const drawer=document.getElementById('drawer'), dt=document.getElementById('drawerToggle');
+dt.onclick=()=>{ const open=!drawer.classList.contains('open'); drawer.classList.toggle('open',open); document.body.classList.toggle('drawer-open',open); dt.setAttribute('aria-expanded',open); };
+document.getElementById('imgBtn').onclick=()=>document.getElementById('imgFile').click();
+document.getElementById('imgFile').onchange=e=>{ if(e.target.files[0]) loadUnderlayFile(e.target.files[0]); e.target.value=''; };
+document.getElementById('imgClear').onclick=()=>{ project.base=null; project.baseImg=null; dirty=true; };
+document.getElementById('imgOpacity').oninput=e=>{ project.baseOpacity=e.target.value/100; document.getElementById('imgOpacityVal').textContent=e.target.value+'%'; };
+document.getElementById('unitFt').onclick=()=>setUnits('ft'); document.getElementById('unitM').onclick=()=>setUnits('m');
+document.getElementById('scaleBtn').onclick=()=>{ setTool('measure'); drawer.classList.remove('open'); document.body.classList.remove('drawer-open'); };
+document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>{ mode=b.dataset.mode; document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b)); });
+document.getElementById('limitToggle').onchange=e=>{ limitByLegibility=e.target.checked; dirty=true; };
+document.getElementById('threadToggle').onchange=e=>{ showThread=e.target.checked; };
+document.getElementById('eyeHeight').onchange=e=>{ const v=parseFloat(e.target.value); if(v>0){ CONFIG.eyeHeightFt=uToFt(v); dirty=true; } };
+document.getElementById('feetPerInch').onchange=e=>{ const v=parseFloat(e.target.value); if(v>0){ CONFIG.feetPerInch=v; dirty=true; } };
+document.getElementById('boundaryClear').onclick=()=>{ commit(); project.boundary=[]; dirty=true; renderPanel(); };
+document.getElementById('spotsClear').onclick=()=>{ commit(); project.spots=[]; dirty=true; renderPanel(); };
+document.getElementById('saveBtn').onclick=saveProject; document.getElementById('loadBtn').onclick=()=>document.getElementById('loadFile').click();
+document.getElementById('loadFile').onchange=e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; };
+document.getElementById('pngBtn').onclick=exportPNG;
+document.getElementById('clearAll').onclick=()=>{ if(!confirm('Start over? This clears the drawing (save first if you want to keep it).')) return; project=newProject(); undoStack=[]; redoStack=[]; selected=null; selectedWall=-1; measureA=null; dirty=true; fitView(); renderPanel(); };
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(!f) return; if(f.name.endsWith('.json')) loadProject(f); else loadUnderlayFile(f); });
+let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(resize,120); });
+
+function starter(){ const d=CONFIG.defaultWorld, x0=-d.w/2, y0=-d.h/2;
+  project.walls=[[x0+d.w*0.22,y0+d.h*0.18,x0+d.w*0.22,y0+d.h*0.58,null],[x0+d.w*0.44,y0+d.h*0.30,x0+d.w*0.68,y0+d.h*0.30,null],[x0+d.w*0.72,y0+d.h*0.48,x0+d.w*0.72,y0+d.h*0.86,null],[x0+d.w*0.30,y0+d.h*0.76,x0+d.w*0.58,y0+d.h*0.76,null],[x0+d.w*0.84,y0+d.h*0.14,x0+d.w*0.84,y0+d.h*0.42,null]];
+  project.signs=[{id:1,label:'Sign 1',x:x0+d.w*0.42,y:y0+d.h*0.52,letterIn:CONFIG.defaultLetterIn,mountFt:CONFIG.defaultMountFt,facing:null,cone:CONFIG.defaultConeDeg}]; project.nextId=2; }
+
+resize(); starter(); fitView(); setTool('move'); renderPanel(); requestAnimationFrame(frame);
+setTimeout(()=>hint('Add a plan (PDF or image) from the panel on the right, or start drawing.'),900);
+})();
+</script>
+</body>
+</html>
