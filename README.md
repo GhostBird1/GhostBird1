@@ -1,7 +1,7 @@
 - 👋 Hi, I’m @GhostBird1
-- 👀 I’m interested in curiosity
+- 👀 I’m curious
 - 🌱 I’m currently learning about parthenogenesis
-- 💞️ I’m looking to collaborate on Illustrative curiosity
+- 💞️ I’m learning
 - 📫 How to reach me ...
 
 <!---
