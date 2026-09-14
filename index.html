@@ -18,6 +18,13 @@
                 a cone of view. Drag the small handle to aim it.
     PDF.        Plans can be dropped in as PDF as well as JPG/PNG.
                 Multi-page PDFs ask for a page.
+    Scan (beta, added 2026-09-13). The Underlay panel can take a first
+                pass at a clean, mostly-square line drawing: it finds
+                long thin dark lines and offers them as walls, and reads
+                a doorway-width gap as a doorway rather than bridging it.
+                Suggestions draw in teal and change nothing until you
+                press Keep; tap a bad one with the erase tool first.
+                Busy, angled or scanned plans still want a hand trace.
 
   WHAT TO DO (touch or mouse)
     Rail on the left picks a tool. One finger draws or drags. Two
@@ -190,6 +197,12 @@
     <input type="file" id="imgFile" accept="image/*,.pdf,application/pdf" hidden>
     <div class="row"><label for="imgOpacity">Opacity</label><input type="range" id="imgOpacity" min="0" max="100" value="70"><span class="val" id="imgOpacityVal">70%</span></div>
     <div class="note">PDF, JPG, PNG, or a photo of a printed plan. Terrain and city maps work the same way: trace what blocks sight with the wall tool and give it a height.</div>
+    <button class="btn wide small" id="scanBtn">Scan plan for walls (beta)</button>
+    <div class="btnrow" id="scanKeepRow" style="display:none;margin-top:8px">
+      <button class="btn small primary" id="scanKeep">Keep all (<span id="scanCount">0</span>)</button>
+      <button class="btn small danger" id="scanDiscard">Discard</button>
+    </div>
+    <div class="note">Reads a clean, mostly-square line drawing and suggests wall lines in teal, leaving gaps where it looks like a doorway. Nothing is added until you tap Keep — tap any teal line with the erase tool first to drop just that one. Busy, angled, or scanned/noisy plans will need hand tracing instead.</div>
   </div>
 
   <h2>Scale</h2>
@@ -277,7 +290,17 @@ const CONFIG = {
   pdfjs: (window.ORACOL_PDFJS || {
     lib:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
     worker:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' }),
-  pdfMaxSide: 4000        // rendered PDF page, longest side in px
+  pdfMaxSide: 4000,       // rendered PDF page, longest side in px
+
+  scan: {                 // heuristic wall/doorway detection from the underlay (beta)
+    maxSide: 1400,          // plan is downscaled to this before analysis, longest side in px
+    minThicknessPx: 3, maxThicknessPx: 40,   // a wall band's short-axis size must fall in here
+    minLengthPx: 24,         // a band shorter than this, after grouping, is dropped
+    bandGroupTolPx: 1,       // rows/columns this close, with overlapping extent, are the same band
+    colinearTolPx: 6,        // how close two centrelines must be to call them the same wall
+    doorMinFt: 2, doorMaxFt: 5,      // plausible doorway width once the drawing has a scale
+    doorMinPx: 10, doorMaxPx: 110    // fallback doorway width in analysis px, before scale is set
+  }
 };
 
 // =====================================================================
@@ -296,6 +319,7 @@ function newProject(){ return { version:2, base:null, baseImg:null, baseOpacity:
 let selected=null, selectedWall=-1, cursor=null, pointers=new Map(), action=null, pinch=null, spaceHeld=false, measureA=null;
 let dirty=true, cache={ isovists:new Map(), grid:null, per:new Map(), union:0, cellsInside:0, area:0 };
 let undoStack=[], redoStack=[];
+let suggested={walls:[],doors:[]};   // from Scan, not yet committed to project.walls
 
 const toWorld=(sx,sy)=>({x:(sx-view.x)/view.zoom, y:(sy-view.y)/view.zoom});
 const S=px=>px/view.zoom;
@@ -455,6 +479,7 @@ function hitFacingHandle(w){ const s=project.signs.find(x=>x.id===selected); if(
 function hitSpot(w){ const r=S(CONFIG.grab); for(let i=project.spots.length-1;i>=0;i--){ const s=project.spots[i]; if(Math.hypot(w.x-s.x,w.y-s.y)<r) return i; } return -1; }
 function hitWallEnd(w){ const r=S(CONFIG.grab); for(let i=project.walls.length-1;i>=0;i--){ const s=project.walls[i]; if(Math.hypot(w.x-s[0],w.y-s[1])<r) return {i,end:0}; if(Math.hypot(w.x-s[2],w.y-s[3])<r) return {i,end:1}; } return null; }
 function hitWall(w){ const r=S(CONFIG.grab*0.7); for(let i=project.walls.length-1;i>=0;i--){ const s=project.walls[i]; if(distToSeg(w.x,w.y,s[0],s[1],s[2],s[3])<r) return i; } return -1; }
+function hitSuggestedWall(w){ const r=S(CONFIG.grab*0.7); for(let i=suggested.walls.length-1;i>=0;i--){ const s=suggested.walls[i]; if(distToSeg(w.x,w.y,s[0],s[1],s[2],s[3])<r) return i; } return -1; }
 function hitBoundaryVertex(w){ const r=S(CONFIG.grab); for(let i=0;i<project.boundary.length;i++){ const p=project.boundary[i]; if(Math.hypot(w.x-p[0],w.y-p[1])<r) return i; } return -1; }
 function snapPoint(w){ const r=S(CONFIG.snap); for(const s of project.walls){ if(Math.hypot(w.x-s[0],w.y-s[1])<r) return {x:s[0],y:s[1]}; if(Math.hypot(w.x-s[2],w.y-s[3])<r) return {x:s[2],y:s[3]}; } return w; }
 
@@ -519,6 +544,7 @@ async function endPointer(e){
       const r=await askNumber({title:'Spot height',text:'Ground elevation at this point, above your datum (0 is the base level).',unit:true,unitLock:true,ok:'Place',def:0,allowNeg:true});
       if(r){ commit(); project.spots.push({x:a.w.x,y:a.w.y,z:uToFt(r.value)}); dirty=true; renderPanel(); } } break;
     case 'erase-tap': if(tap){
+      const sw=hitSuggestedWall(a.w); if(sw>=0){ suggested.walls.splice(sw,1); updateScanUI(); dirty=true; break; }
       const s=hitSign(a.w); if(s){ commit(); project.signs=project.signs.filter(x=>x!==s); if(selected===s.id) selected=null; dirty=true; renderPanel(); break; }
       const sp=hitSpot(a.w); if(sp>=0){ commit(); project.spots.splice(sp,1); dirty=true; renderPanel(); break; }
       const bv=hitBoundaryVertex(a.w); if(bv>=0){ commit(); project.boundary.splice(bv,1); dirty=true; renderPanel(); break; }
@@ -593,6 +619,96 @@ async function loadPDF(file){
   }catch(err){ hint(err&&err.message==='offline'? 'PDF support needs a connection the first time. Try again online, or export the page as JPG.' : 'Could not read that PDF. Try exporting the page as JPG.',5000); }
 }
 
+// ---- scan: heuristic wall/doorway detection from the underlay (beta) ----
+// Downscales the plan and thresholds it to ink vs. paper (Otsu). Walls
+// almost always meet at corners and T-junctions, so a whole connected
+// network of ink is one shapeless blob — no use. Instead this scans each
+// row for long runs of ink (candidate horizontal wall) and each column
+// for long runs (candidate vertical wall); a run stays local to its own
+// row or column, so it survives a perpendicular wall crossing it and
+// simply breaks — for free — at a doorway gap. Adjacent rows/columns
+// whose runs line up are grouped into one wall band. Everything lands in
+// `suggested`, reviewed on the canvas in teal; nothing touches
+// project.walls until Keep is pressed.
+function updateScanUI(){ const row=document.getElementById('scanKeepRow'), n=suggested.walls.length;
+  row.style.display=n? 'flex':'none'; document.getElementById('scanCount').textContent=n; }
+function otsuThreshold(gray){
+  const hist=new Uint32Array(256); for(let i=0;i<gray.length;i++) hist[gray[i]]++;
+  const total=gray.length; let sum=0; for(let t=0;t<256;t++) sum+=t*hist[t];
+  let sumB=0,wB=0,best=0,bestVar=-1;
+  for(let t=0;t<256;t++){ wB+=hist[t]; if(!wB) continue; const wF=total-wB; if(!wF) break;
+    sumB+=t*hist[t]; const mB=sumB/wB, mF=(sum-sumB)/wF, v=wB*wF*(mB-mF)*(mB-mF);
+    if(v>bestVar){ bestVar=v; best=t; } }
+  return best;
+}
+// long runs of ink along each row (horizontal) or each column (vertical)
+function scanRuns(dark,w,h,minRunPx,horizontal){
+  const runs=[], outer=horizontal?h:w, inner=horizontal?w:h;
+  for(let o=0;o<outer;o++){ let i=0;
+    while(i<inner){
+      const idx=horizontal? o*w+i : i*w+o;
+      if(!dark[idx]){ i++; continue; }
+      const i0=i; while(i<inner && dark[horizontal? o*w+i : i*w+o]) i++;
+      if(i-i0>=minRunPx) runs.push({line:o,start:i0,end:i-1});
+    }
+  }
+  return runs;
+}
+// group runs from adjacent rows/columns with overlapping extent into bands
+function groupBands(runs,tolLine){
+  const bands=[], active=[];
+  for(const r of runs){
+    let attached=false;
+    for(const b of active){ if(r.line-b.lineMax<=tolLine && Math.min(r.end,b.end)-Math.max(r.start,b.start)>=0){
+      b.lineMax=r.line; if(r.start<b.start) b.start=r.start; if(r.end>b.end) b.end=r.end; attached=true; break; } }
+    if(!attached) active.push({lineMin:r.line,lineMax:r.line,start:r.start,end:r.end});
+    for(let i=active.length-1;i>=0;i--) if(r.line-active[i].lineMax>tolLine) bands.push(active.splice(i,1)[0]);
+  }
+  bands.push(...active);
+  return bands;
+}
+async function scanUnderlay(){
+  if(!project.baseImg){ hint('Add a plan first.'); return; }
+  hint('Scanning the plan for walls…',8000); await new Promise(r=>setTimeout(r,30));
+  try{
+    const img=project.baseImg, iw=img.naturalWidth, ih=img.naturalHeight, sc=CONFIG.scan;
+    const scale=Math.min(1,sc.maxSide/Math.max(iw,ih)), aw=Math.max(1,Math.round(iw*scale)), ah=Math.max(1,Math.round(ih*scale));
+    const c=document.createElement('canvas'); c.width=aw; c.height=ah; const cx=c.getContext('2d',{willReadFrequently:true});
+    cx.drawImage(img,0,0,aw,ah); const data=cx.getImageData(0,0,aw,ah).data;
+    const gray=new Uint8Array(aw*ah);
+    for(let i=0,p=0;i<gray.length;i++,p+=4) gray[i]=(data[p]*0.299+data[p+1]*0.587+data[p+2]*0.114)|0;
+    const th=otsuThreshold(gray), dark=new Uint8Array(aw*ah);
+    for(let i=0;i<gray.length;i++) dark[i]=gray[i]<=th?1:0;
+    const seedPx=Math.max(4,Math.round(sc.minLengthPx*0.5));
+    const hBands=groupBands(scanRuns(dark,aw,ah,seedPx,true),sc.bandGroupTolPx);
+    const vBands=groupBands(scanRuns(dark,aw,ah,seedPx,false),sc.bandGroupTolPx);
+    const fpp=ftPerPx(), ftPerAnalysisPx=fpp!=null? (project.base.w/aw)*fpp : null;
+    const doorMinPx=ftPerAnalysisPx? sc.doorMinFt/ftPerAnalysisPx : sc.doorMinPx;
+    const doorMaxPx=ftPerAnalysisPx? sc.doorMaxFt/ftPerAnalysisPx : sc.doorMaxPx;
+    const toWorldX=px=>project.base.x+(px/aw)*project.base.w, toWorldY=py=>project.base.y+(py/ah)*project.base.h;
+    const walls=[];
+    for(const b of hBands){ const thick=b.lineMax-b.lineMin+1, len=b.end-b.start+1;
+      if(thick<sc.minThicknessPx||thick>sc.maxThicknessPx||len<sc.minLengthPx) continue;
+      const cy=(b.lineMin+b.lineMax)/2; walls.push({x1:toWorldX(b.start),y1:toWorldY(cy),x2:toWorldX(b.end),y2:toWorldY(cy),horiz:true,a0:b.start,a1:b.end,pos:cy}); }
+    for(const b of vBands){ const thick=b.lineMax-b.lineMin+1, len=b.end-b.start+1;
+      if(thick<sc.minThicknessPx||thick>sc.maxThicknessPx||len<sc.minLengthPx) continue;
+      const cx2=(b.lineMin+b.lineMax)/2; walls.push({x1:toWorldX(cx2),y1:toWorldY(b.start),x2:toWorldX(cx2),y2:toWorldY(b.end),horiz:false,a0:b.start,a1:b.end,pos:cx2}); }
+    const doors=[];
+    for(let i=0;i<walls.length;i++) for(let j=i+1;j<walls.length;j++){
+      const A=walls[i],B=walls[j]; if(A.horiz!==B.horiz||Math.abs(A.pos-B.pos)>sc.colinearTolPx) continue;
+      const gap=A.a1<B.a0? B.a0-A.a1 : (B.a1<A.a0? A.a0-B.a1 : null); if(gap==null||gap<doorMinPx||gap>doorMaxPx) continue;
+      const mid=A.a1<B.a0? (A.a1+B.a0)/2 : (B.a1+A.a0)/2;
+      doors.push(A.horiz? {x:toWorldX(mid),y:toWorldY(A.pos)} : {x:toWorldX(A.pos),y:toWorldY(mid)});
+    }
+    suggested={ walls: walls.map(w=>[w.x1,w.y1,w.x2,w.y2,null]), doors };
+    updateScanUI(); dirty=true;
+    hint(walls.length? ('Found '+walls.length+' possible wall'+(walls.length===1?'':'s')+(doors.length? ' and '+doors.length+' possible doorway'+(doors.length===1?'':'s'):'')+'. Review the teal lines — erase tool drops a bad one — then Keep.') : 'No clear wall lines found. This works best on a clean, mostly-square line drawing — try tracing by hand instead.',6000);
+  }catch(err){ hint('Scan failed. Try tracing the walls by hand instead.',4000); }
+}
+function keepSuggested(){ if(!suggested.walls.length) return; commit(); project.walls.push(...suggested.walls);
+  suggested={walls:[],doors:[]}; dirty=true; updateScanUI(); renderPanel(); hint('Walls added — check each one, since mounts and low walls still need your eye.'); }
+function discardSuggested(){ suggested={walls:[],doors:[]}; updateScanUI(); dirty=true; }
+
 // ---- save / load / export ----
 function download(name,blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500); }
 const stamp=()=>new Date().toISOString().slice(0,10);
@@ -604,7 +720,7 @@ function loadProject(file){ const r=new FileReader(); r.onload=()=>{ try{ const 
   project.signs=(o.signs||[]).map(s=>({mountFt:CONFIG.defaultMountFt,facing:null,cone:CONFIG.defaultConeDeg,...s}));
   project.scale=o.scale||null; project.scaleUnits=o.scaleUnits||'ft'; project.nextId=o.nextId||(project.signs.length+1); project.baseOpacity=o.baseOpacity??0.7;
   if(o.feetPerInch) CONFIG.feetPerInch=o.feetPerInch; if(o.eyeHeightFt) CONFIG.eyeHeightFt=o.eyeHeightFt; if(o.units) units=o.units;
-  undoStack=[]; redoStack=[]; selected=null; selectedWall=-1;
+  undoStack=[]; redoStack=[]; selected=null; selectedWall=-1; suggested={walls:[],doors:[]}; updateScanUI();
   if(o.base&&o.base.src) setBase(o.base.src,o.base); else { project.base=null; project.baseImg=null; fitView(); }
   if(o.view) view={...o.view}; dirty=true; setUnits(units); hint('Project opened'); }catch(err){ hint('That file is not an Oracol Sightlines project.'); } }; r.readAsText(file); }
 function exportPNG(){ draw(true); stage.toBlob(b=>{ download('oracol-sightlines_'+stamp()+'.png',b); hint('PNG exported'); },'image/png'); }
@@ -654,6 +770,14 @@ function draw(forExport){
   if(action&&action.kind==='wall'){ ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(CONFIG.wallWidth); ctx.globalAlpha=0.5; ctx.beginPath(); ctx.moveTo(action.seg[0],action.seg[1]); ctx.lineTo(action.seg[2],action.seg[3]); ctx.stroke(); ctx.globalAlpha=1; }
   if(!forExport&&(tool==='move'||tool==='wall')){ ctx.fillStyle=CONFIG.paper; ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4);
     for(const w of project.walls) for(const [x,y] of [[w[0],w[1]],[w[2],w[3]]]){ ctx.beginPath(); ctx.arc(x,y,lw(4),0,Math.PI*2); ctx.fill(); ctx.stroke(); } }
+
+  // suggested walls & doorways from Scan — review-only, not yet part of the drawing
+  if(!forExport&&(suggested.walls.length||suggested.doors.length)){
+    ctx.strokeStyle=CONFIG.teal; ctx.lineWidth=lw(CONFIG.wallWidth); ctx.setLineDash([lw(3),lw(4)]); ctx.globalAlpha=0.85;
+    for(const w of suggested.walls){ ctx.beginPath(); ctx.moveTo(w[0],w[1]); ctx.lineTo(w[2],w[3]); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.globalAlpha=1;
+    for(const d of suggested.doors){ ctx.strokeStyle=CONFIG.teal; ctx.lineWidth=lw(1.6); ctx.beginPath(); ctx.arc(d.x,d.y,lw(9),0,Math.PI*2); ctx.stroke(); }
+  }
 
   // spot heights
   for(const s of project.spots){ const r=lw(6); ctx.fillStyle=CONFIG.paper; ctx.strokeStyle=CONFIG.ink; ctx.lineWidth=lw(1.4);
@@ -742,7 +866,10 @@ const drawer=document.getElementById('drawer'), dt=document.getElementById('draw
 dt.onclick=()=>{ const open=!drawer.classList.contains('open'); drawer.classList.toggle('open',open); document.body.classList.toggle('drawer-open',open); dt.setAttribute('aria-expanded',open); };
 document.getElementById('imgBtn').onclick=()=>document.getElementById('imgFile').click();
 document.getElementById('imgFile').onchange=e=>{ if(e.target.files[0]) loadUnderlayFile(e.target.files[0]); e.target.value=''; };
-document.getElementById('imgClear').onclick=()=>{ project.base=null; project.baseImg=null; dirty=true; };
+document.getElementById('imgClear').onclick=()=>{ project.base=null; project.baseImg=null; discardSuggested(); dirty=true; };
+document.getElementById('scanBtn').onclick=scanUnderlay;
+document.getElementById('scanKeep').onclick=keepSuggested;
+document.getElementById('scanDiscard').onclick=discardSuggested;
 document.getElementById('imgOpacity').oninput=e=>{ project.baseOpacity=e.target.value/100; document.getElementById('imgOpacityVal').textContent=e.target.value+'%'; };
 document.getElementById('unitFt').onclick=()=>setUnits('ft'); document.getElementById('unitM').onclick=()=>setUnits('m');
 document.getElementById('scaleBtn').onclick=()=>{ setTool('measure'); drawer.classList.remove('open'); document.body.classList.remove('drawer-open'); };
@@ -756,7 +883,7 @@ document.getElementById('spotsClear').onclick=()=>{ commit(); project.spots=[]; 
 document.getElementById('saveBtn').onclick=saveProject; document.getElementById('loadBtn').onclick=()=>document.getElementById('loadFile').click();
 document.getElementById('loadFile').onchange=e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; };
 document.getElementById('pngBtn').onclick=exportPNG;
-document.getElementById('clearAll').onclick=()=>{ if(!confirm('Start over? This clears the drawing (save first if you want to keep it).')) return; project=newProject(); undoStack=[]; redoStack=[]; selected=null; selectedWall=-1; measureA=null; dirty=true; fitView(); renderPanel(); };
+document.getElementById('clearAll').onclick=()=>{ if(!confirm('Start over? This clears the drawing (save first if you want to keep it).')) return; project=newProject(); undoStack=[]; redoStack=[]; selected=null; selectedWall=-1; measureA=null; discardSuggested(); dirty=true; fitView(); renderPanel(); };
 window.addEventListener('dragover',e=>e.preventDefault());
 window.addEventListener('drop',e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(!f) return; if(f.name.endsWith('.json')) loadProject(f); else loadUnderlayFile(f); });
 let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(resize,120); });
